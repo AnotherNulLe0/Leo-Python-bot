@@ -1,0 +1,28 @@
+user_id = 5297672056
+user_token = "5297672056:aaTbBcNd-aaVbxCcdd-aaFbccDt-aFDv"
+user_name = "My_bot_name_bot"
+
+
+commands = [
+        "/help",
+        "/feedback",
+        "/message",
+        "/start",
+    ]
+descriptions = [
+        "Returns this text, that helps users with commands",
+        "Send a feedback message\. Use only for *important* messages",
+        "Send a regular message\. Use for non\-important messages",
+        "Reactivate a bot",
+    ]
+token = user_token
+owner = user_name
+owner_id = user_id
+text = [
+        "Start",
+        "Help",
+        "Feedback",
+        "Message",
+    ]
+
+bot_data = commands, descriptions, token, owner, owner_id, text
