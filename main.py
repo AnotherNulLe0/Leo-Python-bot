@@ -3,6 +3,10 @@ from telegram import Update, constants, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
 from time import sleep
 from config import bot_data
+from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
+from utils import SessionCM
+from models import init_db
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -13,6 +17,12 @@ logging.basicConfig(
 def _text_to_function(text, functions):
     return dict(zip(text, functions))
 
+db_interface = "sqlite+pysqlite:///mydb.db"
+Session = scoped_session(
+    sessionmaker(
+        autocommit=False, autoflush=False, bind=create_engine(db_interface, echo=False)
+    )
+)
 
 class BotData:
     ESCAPED_CHARS = [char for char in "_*[]()~`>#+-=|{}.!"]
@@ -77,6 +87,7 @@ def escape(to_escape):
 
 async def send_action(update: Update, context: ContextTypes.DEFAULT_TYPE, message: str, time_to_wait: float,
                       action: constants.ChatAction):
+    logging.info(f"Function 'send_action': {update.api_kwargs}")
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action, pool_timeout=time_to_wait)
     sleep(time_to_wait)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
@@ -89,12 +100,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["Feedback", "Message"],
     ]
     markup = ReplyKeyboardMarkup(reply_keyboard)
+    logging.info(f"Function 'start': {update.api_kwargs}")
     await update.message.reply_text(text="I'm a bot, type *Help* if you don't know how to use me\.",
                                     reply_markup=markup, parse_mode=constants.ParseMode.MARKDOWN_V2)
 
 
 async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_message()
+    logging.info(f"Function 'bot_help': {update.message.text}, {context.args}, {(update.effective_chat.id, update.effective_chat.type)}, {(update.effective_user.id, update.effective_user.username)}")
     await context.bot.send_message(chat_id=update.effective_chat.id,
                                    text=f"This is *@{bot.OWNER}*'s bot, that helps him to get feedback\.",
                                    parse_mode=constants.ParseMode.MARKDOWN_V2)
@@ -106,12 +119,14 @@ async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_message()
+    logging.info(f"Function 'unknown': {update.message.text}, {context.args}")
     await context.bot.send_message(chat_id=update.effective_chat.id, text="I don't know this command")
 
 
 async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global is_entering_subject
     global is_message
+    logging.info(f"Function 'feedback': {update.api_kwargs}")
     await context.bot.send_message(chat_id=update.effective_chat.id, text="You're going to write a feedback message")
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Write your message subject:")
     is_entering_subject = True
@@ -121,6 +136,7 @@ async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global is_entering_subject
     global is_message
+    logging.info(f"Function 'message': {update.api_kwargs}")
     await context.bot.send_message(chat_id=update.effective_chat.id, text="You're going to write a message")
     await context.bot.send_message(chat_id=update.effective_chat.id, text="Write your message subject:")
     is_entering_subject = True
@@ -132,6 +148,7 @@ async def answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global message_text
     global is_entering_subject
     global subject
+    logging.info(f"Function 'answer': {update.api_kwargs}")
     if is_message:
         if is_entering_subject:
             is_entering_subject = False
@@ -171,12 +188,18 @@ async def answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # print(dir(update))
+    # print(dir(context))
+    logging.info(f"Function 'text': {update.api_kwargs}")
     if update.message.text not in bot.TEXT:
         print("L")
         return
     await bot.text_to_function(update.message.text)(update, context)
 
 if __name__ == "__main__":
+    with SessionCM(Session) as session:
+        init_db(session)
+        
     funcs = [
         start,
         bot_help,
