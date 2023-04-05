@@ -1,21 +1,27 @@
 import logging
 from telegram import Update, constants, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, ContextTypes, CommandHandler, MessageHandler, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+    MessageHandler,
+    filters,
+)
 from time import sleep
 from config import bot_data
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from utils import SessionCM
-from models import init_db
+from models import init_db, ChatLogRecord, insert_chat_log, DataclassFactory
 
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
 
 def _text_to_function(text, functions):
     return dict(zip(text, functions))
+
 
 db_interface = "sqlite+pysqlite:///mydb.db"
 Session = scoped_session(
@@ -24,10 +30,13 @@ Session = scoped_session(
     )
 )
 
+
 class BotData:
     ESCAPED_CHARS = [char for char in "_*[]()~`>#+-=|{}.!"]
 
-    def __init__(self, commands, descriptions, token, owner, owner_id, text, functions) -> None:
+    def __init__(
+        self, commands, descriptions, token, owner, owner_id, text, functions
+    ) -> None:
         self.COMMANDS = commands
         self.DESCRIPTIONS = descriptions
         self.TOKEN = token
@@ -85,10 +94,17 @@ def escape(to_escape):
     return result
 
 
-async def send_action(update: Update, context: ContextTypes.DEFAULT_TYPE, message: str, time_to_wait: float,
-                      action: constants.ChatAction):
-    logging.info(f"Function 'send_action': {update.api_kwargs}")
-    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=action, pool_timeout=time_to_wait)
+async def send_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    message: str,
+    time_to_wait: float,
+    action: constants.ChatAction,
+):
+    logging.info(f"Function 'send_action': {update.effective_message.text}")
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id, action=action, pool_timeout=time_to_wait
+    )
     sleep(time_to_wait)
     await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
 
@@ -100,35 +116,64 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["Feedback", "Message"],
     ]
     markup = ReplyKeyboardMarkup(reply_keyboard)
-    logging.info(f"Function 'start': {update.api_kwargs}")
-    await update.message.reply_text(text="I'm a bot, type *Help* if you don't know how to use me\.",
-                                    reply_markup=markup, parse_mode=constants.ParseMode.MARKDOWN_V2)
+    logging.info(f"Function 'start': {update.effective_message.text}")
+    await update.message.reply_text(
+        text="I'm a bot, type *Help* if you don't know how to use me\.",
+        reply_markup=markup,
+        parse_mode=constants.ParseMode.MARKDOWN_V2,
+    )
 
 
 async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_message()
-    logging.info(f"Function 'bot_help': {update.message.text}, {context.args}, {(update.effective_chat.id, update.effective_chat.type)}, {(update.effective_user.id, update.effective_user.username)}")
-    await context.bot.send_message(chat_id=update.effective_chat.id,
-                                   text=f"This is *@{bot.OWNER}*'s bot, that helps him to get feedback\.",
-                                   parse_mode=constants.ParseMode.MARKDOWN_V2)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"*List of commands:*\n{bot.descriptions}",
-                                   parse_mode=constants.ParseMode.MARKDOWN_V2)
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Also you can use keyboard",
-                                   parse_mode=constants.ParseMode.MARKDOWN_V2)
+    record = DataclassFactory(update, context).run()
+    with SessionCM(Session) as session:
+        insert_chat_log(session, record)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"This is *@{bot.OWNER}*'s bot, that helps him to get feedback\.",
+        parse_mode=constants.ParseMode.MARKDOWN_V2,
+    )
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"*List of commands:*\n{bot.descriptions}",
+        parse_mode=constants.ParseMode.MARKDOWN_V2,
+    )
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"Also you can use keyboard",
+        parse_mode=constants.ParseMode.MARKDOWN_V2,
+    )
 
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_message()
-    logging.info(f"Function 'unknown': {update.message.text}, {context.args}")
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="I don't know this command")
+    logging.info(
+        # f"Function 'unknown': {update.message.text}, {context.args}"
+        f"Function 'bot_help': {dir(update.effective_message)}, {update.effective_chat.type.name}"
+    )
+    record = DataclassFactory(update, context).run()
+    with SessionCM(Session) as session:
+        insert_chat_log(session, record)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id, text="I don't know this command"
+    )
 
 
 async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global is_entering_subject
     global is_message
-    logging.info(f"Function 'feedback': {update.api_kwargs}")
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="You're going to write a feedback message")
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Write your message subject:")
+    logging.info(f"Function 'feedback': {update.effective_message.text}")
+    record = DataclassFactory(update, context).run()
+    with SessionCM(Session) as session:
+        insert_chat_log(session, record)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="You're going to write a feedback message",
+    )
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id, text="Write your message subject:"
+    )
     is_entering_subject = True
     is_message = False
 
@@ -136,9 +181,16 @@ async def feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global is_entering_subject
     global is_message
-    logging.info(f"Function 'message': {update.api_kwargs}")
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="You're going to write a message")
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="Write your message subject:")
+    logging.info(f"Function 'message': {update.effective_message.text}")
+    record = DataclassFactory(update, context).run()
+    with SessionCM(Session) as session:
+        insert_chat_log(session, record)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id, text="You're going to write a message"
+    )
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id, text="Write your message subject:"
+    )
     is_entering_subject = True
     is_message = True
 
@@ -148,65 +200,82 @@ async def answer(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global message_text
     global is_entering_subject
     global subject
-    logging.info(f"Function 'answer': {update.api_kwargs}")
+    logging.info(f"Function 'answer': {update.effective_message.text}")
+    record = DataclassFactory(update, context).run()
+    with SessionCM(Session) as session:
+        insert_chat_log(session, record)
     if is_message:
         if is_entering_subject:
             is_entering_subject = False
             subject = update.message.text
             subject = escape(subject)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Good. Now write your message:")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, text="Good. Now write your message:"
+            )
             is_entering_message = True
         elif is_entering_message:
             is_entering_message = False
             message_text = update.message.text
             message_text = escape(message_text)
             user = update.message.from_user.username
-            await context.bot.send_message(chat_id=update.effective_chat.id,
-                                           text=f"Your message was sent to {bot.OWNER}")
-            await context.bot.send_message(chat_id=bot.owner_id,
-                                           text=f"*Message from: @{escape(user)}*\n\nSubject:\n{subject}\n\nMessage:\n{message_text}",
-                                           parse_mode=constants.ParseMode.MARKDOWN_V2, disable_notification=True)
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"Your message was sent to {bot.OWNER}",
+            )
+            await context.bot.send_message(
+                chat_id=bot.owner_id,
+                text=f"*Message from: @{escape(user)}*\n\nSubject:\n{subject}\n\nMessage:\n{message_text}",
+                parse_mode=constants.ParseMode.MARKDOWN_V2,
+                disable_notification=True,
+            )
             reset_message()
     else:
         if is_entering_subject:
             is_entering_subject = False
             subject = update.message.text
             subject = escape(subject)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="Good. Now write your message:")
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, text="Good. Now write your message:"
+            )
             is_entering_message = True
         elif is_entering_message:
             is_entering_message = False
             message_text = update.message.text
             message_text = escape(message_text)
-            await context.bot.send_message(chat_id=bot.owner_id,
-                                           text=f"*‼️FEEDBACK‼️*\n\n🔴 Subject: 🔴\n{subject}\n\n🔴 Message: 🔴\n{message_text}",
-                                           parse_mode=constants.ParseMode.MARKDOWN_V2)
-            await send_action(update, context, "Thanks a lot!", 1, constants.ChatAction.TYPING)
+            await context.bot.send_message(
+                chat_id=bot.owner_id,
+                text=f"*‼️FEEDBACK‼️*\n\n🔴 Subject: 🔴\n{subject}\n\n🔴 Message: 🔴\n{message_text}",
+                parse_mode=constants.ParseMode.MARKDOWN_V2,
+            )
+            await send_action(
+                update, context, "Thanks a lot!", 1, constants.ChatAction.TYPING
+            )
             reset_message()
         else:
             await text(update, context)
 
 
 async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # print(dir(update))
-    # print(dir(context))
-    logging.info(f"Function 'text': {update.api_kwargs}")
-    if update.message.text not in bot.TEXT:
-        print("L")
+    logging.info(f"Function 'text': {update.effective_message.text}")
+    record = DataclassFactory(update, context).run()
+    with SessionCM(Session) as session:
+        insert_chat_log(session, record)
+    if update.effective_message.text not in bot.TEXT:
         return
     await bot.text_to_function(update.message.text)(update, context)
+
 
 if __name__ == "__main__":
     with SessionCM(Session) as session:
         init_db(session)
-        
+
     funcs = [
         start,
         bot_help,
         feedback,
         message,
     ]
-    bot_data = bot_data + (funcs, )
+    bot_data = bot_data + (funcs,)
     bot = BotData(*bot_data)
     reset_message()
     application = ApplicationBuilder().token(bot.TOKEN).build()
