@@ -2,7 +2,6 @@ user_id = 5297672056
 user_token = "5297672056:aaTbBcNd-aaVbxCcdd-aaFbccDt-aFDv"
 user_name = "My_bot_name_bot"
 
-
 commands = [
         "/help",
         "/feedback",
@@ -17,12 +16,6 @@ descriptions = [
     ]
 token = user_token
 owner = user_name
-owner_id = user_id
-text = [
-        "Start",
-        "Help",
-        "Feedback",
-        "Message",
-    ]
+owner_id = owner_id
 
-bot_data = commands, descriptions, token, owner, owner_id, text
+bot_data = commands, descriptions, token, owner, owner_id

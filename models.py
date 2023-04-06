@@ -47,8 +47,7 @@ class DataclassFactory:
 
     def run(self):
         if self.context.args is not None:
-            print("\n\n", self.context.args, "\n\n")
-            message = f"/{self.instance.text}, {self.context.args}"
+            message = f"{self.instance.text}, {self.context.args}"
         else:
             message = self.instance.text
 
@@ -110,5 +109,4 @@ def insert_chat_log(session: Session, record: ChatLogRecord) -> int:
     chat_log_record = ChatLog(**insert)
     session.add(chat_log_record)
     session.commit()
-    print(f"Record: {chat_log_record}")
     return chat_log_record.id
