@@ -11,8 +11,9 @@ from time import sleep
 from config import bot_data
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
-from utils import SessionCM
-from models import init_db, insert_chat_log, DataclassFactory
+from utils import SessionCM, Poller
+from models import init_db, insert_chat_log, DataclassFactory, get_user, set_user_state, add_user
+from state import UserState
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -24,13 +25,14 @@ Session = scoped_session(
         autocommit=False, autoflush=False, bind=create_engine(db_interface, echo=False)
     )
 )
+location_poller = Poller(session=Session)
 
 
 class BotData:
     ESCAPED_CHARS = [char for char in "_*[]()~`>#+-=|{}.!"]
 
     def __init__(
-        self, commands, descriptions, token, owner, owner_id
+            self, commands, descriptions, token, owner, owner_id
     ) -> None:
         self.COMMANDS = commands
         self.DESCRIPTIONS = descriptions
@@ -87,11 +89,11 @@ def escape(to_escape):
 
 
 async def send_action(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    message: str,
-    time_to_wait: float,
-    action: constants.ChatAction,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+        message: str,
+        time_to_wait: float,
+        action: constants.ChatAction,
 ):
     logging.info(f"Function 'send_action': {update.effective_message.text}")
     await context.bot.send_chat_action(
@@ -106,6 +108,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_keyboard = [
         ["/help", "/start"],
         ["/feedback", "/message"],
+        ["/locator"],
     ]
     markup = ReplyKeyboardMarkup(reply_keyboard)
     logging.info(f"Function 'start': {update.effective_message.text}")
@@ -199,6 +202,7 @@ async def receiver(update: Update, context: ContextTypes.DEFAULT_TYPE):
     record = DataclassFactory(update, context).run()
     with SessionCM(Session) as session:
         insert_chat_log(session, record)
+        user_id = int(update.effective_user.id)
     if is_message:
         if is_entering_subject:
             is_entering_subject = False
@@ -252,15 +256,45 @@ async def receiver(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logging.info(f"Function 'text': {update.effective_message.text}")
+    user = get_user(session=session, user_id=update.effective_user.id)
+    if not user:
+        user = add_user(session=session, user_id=update.effective_user.id)
+    user = UserState(user, session)
+    msg = str(user.run(update.effective_message.text))
+    if user.state == "configured":
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id, text="Configuring your service. I will take less than a minute..."
+        )
+        location_poller.update()
     await context.bot.send_message(
-                chat_id=update.effective_chat.id, text="Noted!"
-            )
+        chat_id=update.effective_chat.id, text=msg
+    )
+
+
+async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = get_user(session=session, user_id=update.effective_user.id)
+    if not user:
+        user = add_user(session=session, user_id=update.effective_user.id)
+
+    user = UserState(user, session)
+    msg = user.run()
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+
+
+# async def run(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user = get_user(session=session, user_id=update.effective_user.id)
+#     if not user:
+#         user = add_user(session=session, user_id=update.effective_user.id)
+#
+#     user = UserState(user, session)
+#     user.run()
+#     await context.bot.send_message(chat_id=update.effective_chat.id, text="running")
 
 
 if __name__ == "__main__":
     with SessionCM(Session) as session:
         init_db(session)
-
+    location_poller.start()
     bot_data = bot_data
     bot = BotData(*bot_data)
     reset_message()
@@ -270,6 +304,8 @@ if __name__ == "__main__":
     help_handler = CommandHandler("help", bot_help)
     feedback_handler = CommandHandler("feedback", feedback)
     message_handler = CommandHandler("message", message)
+    locator_handler = CommandHandler("locator", locator)
+    # runner_handler = CommandHandler("run", run)
     receiver_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), receiver)
     unknown_handler = MessageHandler(filters.COMMAND, unknown)
 
@@ -278,6 +314,9 @@ if __name__ == "__main__":
     application.add_handler(feedback_handler)
     application.add_handler(message_handler)
     application.add_handler(receiver_handler)
+    application.add_handler(locator_handler)
+    # application.add_handler(runner_handler)
     application.add_handler(unknown_handler)
 
     application.run_polling()
+    location_poller.stop()
