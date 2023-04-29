@@ -1,3 +1,4 @@
+import json
 from threading import Thread, Event
 from time import sleep
 from locator import MyService
@@ -36,9 +37,10 @@ class Poller:
             if self.users:
                 for user in self.users:
                     service_objects = MyService(user.user_cookie, user.user_email)
-                    for person in service_objects.get_all_people():
-                        add_location_record(self.session, user.user_id, person)
+                    for nickname in json.loads(user.tracked_objects):
+                        person = service_objects.get_person_by_nickname(nickname)
                         print(f"polling {person.nickname}")
+                        add_location_record(self.session, user.user_id, person)
             sleep(60)
         print("Thread stopped")
         return "Thread stopped"

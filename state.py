@@ -10,7 +10,7 @@ class UserState:
         self.state = user.user_state
         self.transitions = {
             "initial": {
-                "msg": "configurator started",
+                "msg": "Starting locator registration procedure. \nSend me your email address.",
                 "locator": "waiting_email",
                 "reset": "initial",
                 "error": "errored",
@@ -54,6 +54,11 @@ class UserState:
             return self.transitions[self.state]['msg']
         return self.transitions[self.state]['error']
 
+    def start(self):
+        if self.state == "initial":
+            return self.transition("locator")
+        return self.transition("error")
+
     def get_email(self, email):
         if self.state == "waiting_email":
             if add_user_email(self.session, self.user.user_id, email):
@@ -79,10 +84,14 @@ class UserState:
 
             return self.transition("error")
 
+    def update_poller(self, poller):
+        if self.state == "configured":
+            poller.update()
+            return self.transition("run")
+
     def run(self, *args):
         if self.state == "initial":
-            self.transition("locator")
-            return "Starting locator registration procedure. \nSend me your email address."
+            return self.start()
         elif self.state == "waiting_email":
             return self.get_email(*args)
         elif self.state == "waiting_cookies":
@@ -90,6 +99,5 @@ class UserState:
         elif self.state == "waiting_object":
             return self.get_object(*args)
         elif self.state == "configured":
-            return "Noted!"
-        else:
-            return False
+            return self.update_poller(*args)
+        return False

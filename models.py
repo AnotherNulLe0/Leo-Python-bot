@@ -114,13 +114,13 @@ class Location(Base):
     owner: Mapped[int] = mapped_column(ForeignKey("user.user_id"))
     full_name: Mapped[str] = mapped_column(String(), default="")
     nickname: Mapped[str] = mapped_column(String(), default="")
-    current_location: Mapped[str] = mapped_column(String())
+    current_location: Mapped[str] = mapped_column(String(), default="")
     latitude: Mapped[float] = mapped_column(Float())
     longitude: Mapped[float] = mapped_column(Float())
     timestamp: Mapped[datetime] = mapped_column(DateTime())
-    charging: Mapped[int] = mapped_column(Boolean())
-    battery: Mapped[int] = mapped_column(Integer())
-    accuracy: Mapped[int] = mapped_column(Integer())
+    charging: Mapped[int] = mapped_column(Boolean(), default=False)
+    battery: Mapped[int] = mapped_column(Integer(), default="")
+    accuracy: Mapped[int] = mapped_column(Integer(), default="")
 
 
 def init_db(session):

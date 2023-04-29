@@ -260,15 +260,13 @@ async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user:
         user = add_user(session=session, user_id=update.effective_user.id)
     user = UserState(user, session)
-    msg = str(user.run(update.effective_message.text))
-    if user.state == "configured":
+    if user.state not in ["initial", "running"]:
+        msg = str(user.run(update.effective_message.text))
+        if user.state == "configured":
+            msg = str(user.run(location_poller))
         await context.bot.send_message(
-            chat_id=update.effective_chat.id, text="Configuring your service. I will take less than a minute..."
+            chat_id=update.effective_chat.id, text=msg
         )
-        location_poller.update()
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id, text=msg
-    )
 
 
 async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
