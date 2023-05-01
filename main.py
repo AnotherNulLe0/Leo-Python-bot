@@ -11,8 +11,10 @@ from time import sleep
 from config import bot_data
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
+
+from locator import location_render
 from utils import SessionCM, Poller
-from models import init_db, insert_chat_log, DataclassFactory, get_user, set_user_state, add_user
+from models import init_db, insert_chat_log, DataclassFactory, get_user, add_user
 from state import UserState
 
 logging.basicConfig(
@@ -25,7 +27,7 @@ Session = scoped_session(
         autocommit=False, autoflush=False, bind=create_engine(db_interface, echo=False)
     )
 )
-location_poller = Poller(session=Session)
+location_poller = Poller(db_interface)
 
 
 class BotData:
@@ -108,7 +110,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_keyboard = [
         ["/help", "/start"],
         ["/feedback", "/message"],
-        ["/locator"],
+        ["/register", "/locator"],
     ]
     markup = ReplyKeyboardMarkup(reply_keyboard)
     logging.info(f"Function 'start': {update.effective_message.text}")
@@ -269,7 +271,7 @@ async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = get_user(session=session, user_id=update.effective_user.id)
     if not user:
         user = add_user(session=session, user_id=update.effective_user.id)
@@ -277,6 +279,21 @@ async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = UserState(user, session)
     msg = user.run()
     await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+
+
+async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    print(context.args)
+    user = get_user(session=session, user_id=update.effective_user.id)
+    if not user:
+        msg = "You need to register the location service first. /register"
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+    elif UserState(user, session).state == "running":
+        nickname, day = context.args
+        timeframe = [f"{day} 00:00:00", f"{day} 23:59:59"]
+        picture = location_render(session, owner_id=user.user_id, nickname='Наталья', timeframe=timeframe, length=100)
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
+        return
+
 
 
 # async def run(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -302,8 +319,8 @@ if __name__ == "__main__":
     help_handler = CommandHandler("help", bot_help)
     feedback_handler = CommandHandler("feedback", feedback)
     message_handler = CommandHandler("message", message)
+    register_handler = CommandHandler("register", register)
     locator_handler = CommandHandler("locator", locator)
-    # runner_handler = CommandHandler("run", run)
     receiver_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), receiver)
     unknown_handler = MessageHandler(filters.COMMAND, unknown)
 
@@ -312,8 +329,8 @@ if __name__ == "__main__":
     application.add_handler(feedback_handler)
     application.add_handler(message_handler)
     application.add_handler(receiver_handler)
+    application.add_handler(register_handler)
     application.add_handler(locator_handler)
-    # application.add_handler(runner_handler)
     application.add_handler(unknown_handler)
 
     application.run_polling()

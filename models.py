@@ -23,12 +23,6 @@ from sqlalchemy.orm import (
     mapped_column,
     Bundle,
 )
-from sqlalchemy.dialects.sqlite import insert as ins
-
-
-def test():
-    return update()
-
 
 logger_app = logging.getLogger(__name__)
 
@@ -71,7 +65,6 @@ class DataclassFactory:
             message_id=self.instance.id,
             timestamp=self.instance.date,
         )
-        # Message(channel_chat_created=False, chat=Chat(first_name='Kirill', id=227224447, type=<ChatType.PRIVATE>, username='the_one_kirill'), date=datetime.datetime(2023, 4, 5, 15, 7, 1, tzinfo=datetime.timezone.utc), delete_chat_photo=False, edit_date=datetime.datetime(2023, 4, 5, 15, 9, 36, tzinfo=datetime.timezone.utc), from_user=User(first_name='Kirill', id=227224447, is_bot=False, language_code='en', username='the_one_kirill'), group_chat_created=False, message_id=291, supergroup_chat_created=False, text='test2')
 
 
 class Base(DeclarativeBase):
@@ -224,3 +217,11 @@ def add_location_record(session: Session, owner, person) -> bool:
 
 def get_all_users(session: Session) -> List:
     return list(session.scalars(select(Users).where(Users.tracked_objects != "[]")))
+
+
+def get_coordinates(session: Session, owner_id, nickname, timeframe):
+    columns = Bundle("columns", Location.latitude, Location.longitude)
+    res = session.scalars(select(columns).where(
+        and_(Location.owner == owner_id, Location.nickname == nickname,
+             Location.timestamp.between(timeframe[0], timeframe[1])))).unique()
+    return res

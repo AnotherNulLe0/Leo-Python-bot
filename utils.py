@@ -3,6 +3,14 @@ from threading import Thread, Event
 from time import sleep
 from locator import MyService
 from models import get_all_users, add_location_record
+from sqlalchemy import create_engine
+from sqlalchemy.orm import scoped_session, sessionmaker
+from sqlalchemy.orm.exc import DetachedInstanceError
+import logging
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 
 
 class SessionCM:
@@ -26,23 +34,38 @@ class SessionCM:
 
 
 class Poller:
-    def __init__(self, session):
-        self.session = session
+    def __init__(self, db_interface):
         self.users = None
         self.stopped = Event()
         self.thread = None
+        self.db_interface = db_interface
+        self.session = self._session
+
+    @property
+    def _session(self):
+        Session = scoped_session(
+            sessionmaker(
+                autocommit=False, autoflush=False, bind=create_engine(self.db_interface, echo=False)
+            )
+        )
+        return Session
 
     def poller(self):
         while not self.stopped.is_set():
-            if self.users:
-                for user in self.users:
-                    service_objects = MyService(user.user_cookie, user.user_email)
-                    for nickname in json.loads(user.tracked_objects):
-                        person = service_objects.get_person_by_nickname(nickname)
-                        print(f"polling {person.nickname}")
-                        add_location_record(self.session, user.user_id, person)
-            sleep(60)
-        print("Thread stopped")
+            try:
+                if self.users:
+                    with SessionCM(self.session) as session:
+                        for user in self.users:
+                            service_objects = MyService(user.user_cookie, user.user_email)
+                            for nickname in json.loads(user.tracked_objects):
+                                person = service_objects.get_person_by_nickname(nickname)
+                                logging.info(msg=f"polling {person.nickname}")
+                                add_location_record(session, user.user_id, person)
+                sleep(60)
+            except DetachedInstanceError:
+                print("Thread exception")
+                logging.info(msg="Thread exception")
+
         return "Thread stopped"
 
     def start(self):

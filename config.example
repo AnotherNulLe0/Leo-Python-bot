@@ -1,6 +1,7 @@
 user_id = 5297672056
 user_token = "5297672056:aaTbBcNd-aaVbxCcdd-aaFbccDt-aFDv"
 user_name = "My_bot_name_bot"
+gmaps_token = "5297672056:aaTbBcNd-aaVbxCcdd-aaFbccDt-aFDv"
 
 commands = [
         "/help",
