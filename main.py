@@ -10,9 +10,7 @@ from telegram.ext import (
 )
 # from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from datepicker_detailed import DetailedTelegramCalendar, LSTEP
-from timepicker import InlineTimepicker
 from time import sleep
-import datetime
 from config import bot_data
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
