@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.orm.exc import DetachedInstanceError
 import logging
+from requests import ConnectionError
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -62,9 +63,9 @@ class Poller:
                                 logging.info(msg=f"polling {person.nickname}")
                                 add_location_record(session, user.user_id, person)
                 sleep(60)
-            except DetachedInstanceError:
-                print("Thread exception")
-                logging.info(msg="Thread exception")
+            except DetachedInstanceError or ConnectionError as err:
+                print(f"Thread exception: {err}")
+                logging.info(msg=f"Thread exception: {err}")
 
         return "Thread stopped"
 

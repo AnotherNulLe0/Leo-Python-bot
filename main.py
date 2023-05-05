@@ -6,8 +6,13 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     filters,
+    CallbackQueryHandler,
 )
+# from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
+from datepicker_detailed import DetailedTelegramCalendar, LSTEP
+from timepicker import InlineTimepicker
 from time import sleep
+import datetime
 from config import bot_data
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
@@ -111,6 +116,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ["/help", "/start"],
         ["/feedback", "/message"],
         ["/register", "/locator"],
+        ["/calender"],
     ]
     markup = ReplyKeyboardMarkup(reply_keyboard)
     logging.info(f"Function 'start': {update.effective_message.text}")
@@ -296,20 +302,62 @@ async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-# async def run(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     user = get_user(session=session, user_id=update.effective_user.id)
-#     if not user:
-#         user = add_user(session=session, user_id=update.effective_user.id)
+
+inline_timepicker = InlineTimepicker()
+
+
+# async def calender(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     inline_timepicker.init(
+#         datetime.time(12),
+#         datetime.time(0),
+#         datetime.time(23),
+#         chat_id=update.effective_chat.id,
+#     )
+#     reply_markup = inline_timepicker.get_keyboard(update.effective_chat.id)
+#     await context.bot.send_message(chat_id=update.effective_chat.id,
+#                                    text='test',
+#                                    reply_markup=reply_markup)
 #
-#     user = UserState(user, session)
-#     user.run()
-#     await context.bot.send_message(chat_id=update.effective_chat.id, text="running")
+#
+#
+# async def calender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     query = update.callback_query
+#     handle_result = inline_timepicker.handle(chat_id=query.message.chat.id, callback_data=query)
+#     print(handle_result)
+#     if handle_result is not None:
+#         await context.bot.edit_message_text(text=str(handle_result),
+#                                             chat_id=query.message.chat.id,
+#                                             message_id=query.message.message_id)
+#     else:
+#         keyboard = inline_timepicker.get_keyboard(update.effective_chat.id)
+#         await context.bot.edit_message_reply_markup(chat_id=query.from_user.id,
+#                                                     message_id=query.message.message_id,
+#                                                     reply_markup=keyboard)
+
+async def calender(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    calendar, step = DetailedTelegramCalendar().build()
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
+                                   reply_markup=calendar)
+
+
+async def calender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    result, key, step = DetailedTelegramCalendar().process(query.data)
+    if not result and key:
+        await context.bot.edit_message_text(f"Select {LSTEP[step]}",
+                                            query.message.chat.id,
+                                            query.message.message_id,
+                                            reply_markup=key)
+    elif result:
+        await context.bot.edit_message_text(f"You selected {result}",
+                                            query.message.chat.id,
+                                            query.message.message_id)
 
 
 if __name__ == "__main__":
     with SessionCM(Session) as session:
         init_db(session)
-    location_poller.start()
+    # location_poller.start()
     bot_data = bot_data
     bot = BotData(*bot_data)
     reset_message()
@@ -321,7 +369,9 @@ if __name__ == "__main__":
     message_handler = CommandHandler("message", message)
     register_handler = CommandHandler("register", register)
     locator_handler = CommandHandler("locator", locator)
+    calender_handler = CommandHandler("calender", calender)
     receiver_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), receiver)
+    callback_handler = CallbackQueryHandler(calender_callback)
     unknown_handler = MessageHandler(filters.COMMAND, unknown)
 
     application.add_handler(start_handler)
@@ -331,7 +381,10 @@ if __name__ == "__main__":
     application.add_handler(receiver_handler)
     application.add_handler(register_handler)
     application.add_handler(locator_handler)
+    application.add_handler(calender_handler)
+    application.add_handler(callback_handler)
     application.add_handler(unknown_handler)
 
     application.run_polling()
     location_poller.stop()
+    print(inline_timepicker.data)
