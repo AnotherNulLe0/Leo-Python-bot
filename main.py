@@ -301,7 +301,7 @@ async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-inline_timepicker = InlineTimepicker()
+# inline_timepicker = InlineTimepicker()
 
 
 # async def calender(update: Update, context: ContextTypes.DEFAULT_TYPE):
