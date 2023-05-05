@@ -355,7 +355,7 @@ async def calender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 if __name__ == "__main__":
     with SessionCM(Session) as session:
         init_db(session)
-    # location_poller.start()
+    location_poller.start()
     bot_data = bot_data
     bot = BotData(*bot_data)
     reset_message()
@@ -385,4 +385,4 @@ if __name__ == "__main__":
 
     application.run_polling()
     location_poller.stop()
-    print(inline_timepicker.data)
+    # print(inline_timepicker.data)
