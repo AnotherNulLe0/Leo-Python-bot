@@ -1,5 +1,5 @@
 import logging
-from telegram import Update, constants, ReplyKeyboardMarkup
+from telegram import Update, constants, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -7,6 +7,7 @@ from telegram.ext import (
     MessageHandler,
     filters,
     CallbackQueryHandler,
+    ConversationHandler,
 )
 # from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from datepicker_detailed import DetailedTelegramCalendar, LSTEP
@@ -17,7 +18,7 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 
 from locator import location_render
 from utils import SessionCM, Poller
-from models import init_db, insert_chat_log, DataclassFactory, get_user, add_user
+from models import init_db, insert_chat_log, DataclassFactory, get_user, add_user, get_tracked_users
 from state import UserState
 
 logging.basicConfig(
@@ -31,6 +32,8 @@ Session = scoped_session(
     )
 )
 location_poller = Poller(db_interface)
+
+OBJECT, TIME, LOCATOR, REGISTER, ADD = "OBJECT", "TIME", "LOCATOR", "REGISTER", "ADD"
 
 
 class BotData:
@@ -112,9 +115,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_message()
     reply_keyboard = [
         ["/help", "/start"],
-        ["/feedback", "/message"],
-        ["/register", "/locator"],
-        ["/calender"],
+        ["/register", "/locator", "/add"],
     ]
     markup = ReplyKeyboardMarkup(reply_keyboard)
     logging.info(f"Function 'start': {update.effective_message.text}")
@@ -136,20 +137,9 @@ async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         insert_chat_log(session, record)
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=f"This is *@{bot.OWNER}*'s bot, that helps him to get feedback\.",
+        text=f"This is *@{bot.OWNER}*'s bot, that helps track a google shared location\.",
         parse_mode=constants.ParseMode.MARKDOWN_V2,
     )
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=f"*List of commands:*\n{bot.descriptions}",
-        parse_mode=constants.ParseMode.MARKDOWN_V2,
-    )
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=f"Also you can use keyboard",
-        parse_mode=constants.ParseMode.MARKDOWN_V2,
-    )
-
 
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_message()
@@ -205,6 +195,7 @@ async def receiver(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global is_entering_subject
     global subject
     logging.info(f"Function 'receiver': {update.effective_message}")
+    print(context.user_data)
     record = DataclassFactory(update, context).run()
     with SessionCM(Session) as session:
         insert_chat_log(session, record)
@@ -273,9 +264,12 @@ async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id=update.effective_chat.id, text=msg
         )
+    if user.state == "running":
+        return ConversationHandler.END
 
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # TODO: move registration procedure from text()
     user = get_user(session=session, user_id=update.effective_user.id)
     if not user:
         user = add_user(session=session, user_id=update.effective_user.id)
@@ -283,62 +277,108 @@ async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = UserState(user, session)
     msg = user.run()
     await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+    return REGISTER
 
 
-async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(context.args)
-    user = get_user(session=session, user_id=update.effective_user.id)
-    if not user:
-        msg = "You need to register the location service first. /register"
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
-    elif UserState(user, session).state == "running":
-        nickname, day = context.args
-        timeframe = [f"{day} 00:00:00", f"{day} 23:59:59"]
-        picture = location_render(session, owner_id=user.user_id, nickname='Наталья', timeframe=timeframe, length=100)
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
-        return
+async def add_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    with SessionCM(Session) as session:
+        user = get_user(session=session, user_id=update.effective_user.id)
+        if not user:
+            msg = "Please register before you can add an object for tracking."
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+            return ConversationHandler.END
+        else:
+            user = UserState(user, session)
+            if user.state == "running":
+                objects = list(user.get_untracked_objects())
+                print(objects)
+                reply_keyboard = [objects]
+                reply_markup = ReplyKeyboardMarkup(
+                    reply_keyboard, one_time_keyboard=True, input_field_placeholder="Pick your object"
+                )
+                msg = user.transition("add_object")
+                await update.message.reply_text(msg, reply_markup=reply_markup)
+                return ADD
+            elif user.state == "waiting_object":
+                msg = str(user.run(update.effective_message.text))
+                if user.state == "configured":
+                    msg = str(user.run(location_poller))
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id, text=msg
+                )
+            else:
+                msg = "Please /register before you can add an object for tracking."
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+            return ConversationHandler.END
 
-
-
-
-# inline_timepicker = InlineTimepicker()
+# async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     print(context.args)
+#     user = get_user(session=session, user_id=update.effective_user.id)
+#     if not user:
+#         msg = "You need to register the location service first. /register"
+#         await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+#     elif UserState(user, session).state == "running":
+#         nickname, day = context.args
+#         calendar, step = DetailedTelegramCalendar().build()
+#         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
+#                                        reply_markup=calendar)
+#         timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
+#         print(timeframe)
+#         picture = location_render(session, owner_id=user.user_id, nickname='Наталья', timeframe=timeframe, length=100)
+#         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
+#         return ConversationHandler.END
 
 
 # async def calender(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     inline_timepicker.init(
-#         datetime.time(12),
-#         datetime.time(0),
-#         datetime.time(23),
-#         chat_id=update.effective_chat.id,
-#     )
-#     reply_markup = inline_timepicker.get_keyboard(update.effective_chat.id)
-#     await context.bot.send_message(chat_id=update.effective_chat.id,
-#                                    text='test',
-#                                    reply_markup=reply_markup)
-#
+#     calendar, step = DetailedTelegramCalendar().build()
+#     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
+#                                    reply_markup=calendar)
 #
 #
 # async def calender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 #     query = update.callback_query
-#     handle_result = inline_timepicker.handle(chat_id=query.message.chat.id, callback_data=query)
-#     print(handle_result)
-#     if handle_result is not None:
-#         await context.bot.edit_message_text(text=str(handle_result),
-#                                             chat_id=query.message.chat.id,
-#                                             message_id=query.message.message_id)
-#     else:
-#         keyboard = inline_timepicker.get_keyboard(update.effective_chat.id)
-#         await context.bot.edit_message_reply_markup(chat_id=query.from_user.id,
-#                                                     message_id=query.message.message_id,
-#                                                     reply_markup=keyboard)
+#     result, key, step = DetailedTelegramCalendar().process(query.data)
+#     if not result and key:
+#         await context.bot.edit_message_text(f"Select {LSTEP[step]}",
+#                                             query.message.chat.id,
+#                                             query.message.message_id,
+#                                             reply_markup=key)
+#         return TIME
+#     elif result:
+#         await context.bot.edit_message_text(f"You selected {result}",
+#                                             query.message.chat.id,
+#                                             query.message.message_id)
+#         if not context.user_data.get("start_time", False):
+#             context.user_data["start_time"] = result
+#             return TIME
+#         elif not context.user_data.get("end_time", False):
+#             context.user_data["end_time"] = result
+#             return LOCATOR
+#     print(f"Timepicker error. result, key, step = {result, key, step}")
+#     return None
 
-async def calender(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+async def locator_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    with SessionCM(Session) as session:
+        user = get_user(session=session, user_id=update.effective_user.id)
+        tracked_users = user.tracked_objects
+        reply_keyboard = [tracked_users]
+        reply_markup = ReplyKeyboardMarkup(
+            reply_keyboard, one_time_keyboard=True, input_field_placeholder="Pick your object"
+        )
+        await update.message.reply_text("Chose your object to continue", reply_markup=reply_markup)
+        return OBJECT
+
+
+async def loc_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["object"] = update.message.text
     calendar, step = DetailedTelegramCalendar().build()
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
                                    reply_markup=calendar)
+    return TIME
 
 
-async def calender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def time_picker_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     result, key, step = DetailedTelegramCalendar().process(query.data)
     if not result and key:
@@ -346,10 +386,51 @@ async def calender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                             query.message.chat.id,
                                             query.message.message_id,
                                             reply_markup=key)
+        return TIME
     elif result:
         await context.bot.edit_message_text(f"You selected {result}",
                                             query.message.chat.id,
                                             query.message.message_id)
+        if not context.user_data.get("start_time", False):
+            context.user_data["start_time"] = result
+            calendar, step = DetailedTelegramCalendar().build()
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
+                                           reply_markup=calendar)
+        elif not context.user_data.get("end_time", False):
+            context.user_data["end_time"] = result
+            user = get_user(session=session, user_id=update.effective_user.id)
+            if UserState(user, session).state == "running":
+                nickname = context.user_data["object"]
+                timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
+                picture = location_render(session, owner_id=user.user_id, nickname=nickname, timeframe=timeframe,
+                                          length=100)
+                await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
+                context.user_data.clear()
+                return ConversationHandler.END
+
+    return TIME
+
+
+# def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
+#     user = get_user(session=session, user_id=update.effective_user.id)
+#     if not user:
+#         msg = "You need to register the location service first. /register"
+#         await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+#     elif UserState(user, session).state == "running":
+#         nickname = context.user_data["object"]
+#         timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
+#         print(timeframe)
+#         picture = location_render(session, owner_id=user.user_id, nickname=nickname, timeframe=timeframe, length=100)
+#         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
+#         return ConversationHandler.END
+
+
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Cancels and ends the conversation."""
+    await update.message.reply_text(
+        "Conversation canceled", reply_markup=ReplyKeyboardRemove()
+    )
+    return ConversationHandler.END
 
 
 if __name__ == "__main__":
@@ -363,24 +444,49 @@ if __name__ == "__main__":
 
     start_handler = CommandHandler("start", start)
     help_handler = CommandHandler("help", bot_help)
-    feedback_handler = CommandHandler("feedback", feedback)
-    message_handler = CommandHandler("message", message)
+    # feedback_handler = CommandHandler("feedback", feedback)
+    # message_handler = CommandHandler("message", message)
     register_handler = CommandHandler("register", register)
-    locator_handler = CommandHandler("locator", locator)
-    calender_handler = CommandHandler("calender", calender)
+    # locator_handler = CommandHandler("locator", locator)
+    # calender_handler = CommandHandler("calender", calender)
     receiver_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), receiver)
-    callback_handler = CallbackQueryHandler(calender_callback)
+    # callback_handler = CallbackQueryHandler(calender_callback)
+    new_object_conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler("add", add_object)],
+        states={
+            ADD: [MessageHandler(filters.TEXT & (~filters.COMMAND), add_object)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    register_conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler("register", register)],
+        states={
+            REGISTER: [CommandHandler("register", register)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    location_conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler("locator", locator_start)],
+        states={
+            OBJECT: [MessageHandler(filters.TEXT, loc_object)],
+            TIME: [CallbackQueryHandler(time_picker_callback)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
     unknown_handler = MessageHandler(filters.COMMAND, unknown)
 
     application.add_handler(start_handler)
     application.add_handler(help_handler)
-    application.add_handler(feedback_handler)
-    application.add_handler(message_handler)
+    # application.add_handler(feedback_handler)
+    # application.add_handler(message_handler)
+    application.add_handler(new_object_conversation_handler)
+    application.add_handler(register_conversation_handler)
+    application.add_handler(location_conversation_handler)
     application.add_handler(receiver_handler)
     application.add_handler(register_handler)
-    application.add_handler(locator_handler)
-    application.add_handler(calender_handler)
-    application.add_handler(callback_handler)
+    # application.add_handler(locator_handler)
+    # application.add_handler(calender_handler)
+    # application.add_handler(callback_handler)
     application.add_handler(unknown_handler)
 
     application.run_polling()

@@ -2,12 +2,13 @@ import json
 from threading import Thread, Event
 from time import sleep
 from locator import MyService
-from models import get_all_users, add_location_record
+from models import get_all_users, add_location_record, get_tracked_users
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.orm.exc import DetachedInstanceError
 import logging
 from requests import ConnectionError
+from urllib3.exceptions import NewConnectionError, MaxRetryError
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -63,7 +64,7 @@ class Poller:
                                 logging.info(msg=f"polling {person.nickname}")
                                 add_location_record(session, user.user_id, person)
                 sleep(60)
-            except DetachedInstanceError or ConnectionError as err:
+            except DetachedInstanceError or ConnectionError or NewConnectionError or MaxRetryError as err:
                 print(f"Thread exception: {err}")
                 logging.info(msg=f"Thread exception: {err}")
 
@@ -71,11 +72,12 @@ class Poller:
 
     def start(self):
         if not self.thread:
-            self.users = get_all_users(self.session)
+            with SessionCM(self.session) as session:
+                self.users = get_all_users(self.session)
             self.stopped.clear()
             self.thread = Thread(target=self.poller)
             self.thread.start()
-            print("thread started")
+            print(f"thread started for: {self.users}")
 
     def stop(self):
         if self.thread:
@@ -90,6 +92,6 @@ class Poller:
 
     def update(self):
         self.stop()
-        self.users = get_all_users(self.session)
+        with SessionCM(self.session) as session:
+            self.users = get_all_users(self.session)
         self.start()
-

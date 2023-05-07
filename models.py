@@ -225,3 +225,8 @@ def get_coordinates(session: Session, owner_id, nickname, timeframe):
         and_(Location.owner == owner_id, Location.nickname == nickname,
              Location.timestamp.between(timeframe[0], timeframe[1])))).unique()
     return res
+
+
+def get_tracked_users(session: Session, owner_id):
+    tracked = session.scalar(select(Users.tracked_objects).where(Users.user_id == owner_id))
+    return json.loads(tracked)

@@ -1,4 +1,4 @@
-from models import add_user_cookie, add_tracking_object, add_user_email, set_user_state
+from models import add_user_cookie, add_tracking_object, add_user_email, set_user_state, get_tracked_users
 from locator import MyService
 from models import Users
 
@@ -41,6 +41,7 @@ class UserState:
             },
             "running": {
                 "msg": "running",
+                "add_object": "waiting_object",
                 "reset": "initial",
                 "error": "errored",
             }
@@ -73,7 +74,7 @@ class UserState:
                 service_objects = MyService(self.user.user_cookie, self.user.user_email)
                 for person in service_objects.get_all_people():
                     objects.append(person.nickname)
-                return self.transition("got_cookies"), objects
+                return self.transition("got_cookies"), objects  # TODO: replace text format within ReplyKeyboardMarkup
 
             return self.transition("error")
 
@@ -83,6 +84,11 @@ class UserState:
                 return self.transition("got_object")
 
             return self.transition("error")
+
+    def get_untracked_objects(self):
+        tracked = set(get_tracked_users(self.session, self.user.user_id))
+        all_objects = [i.nickname for i in MyService(self.user.user_cookie, self.user.user_email).get_all_people()]
+        return set(all_objects).difference(tracked)
 
     def update_poller(self, poller):
         if self.state == "configured":
