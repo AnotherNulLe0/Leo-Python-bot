@@ -1,3 +1,4 @@
+import json
 import logging
 from telegram import Update, constants, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
@@ -361,7 +362,7 @@ async def add_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def locator_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with SessionCM(Session) as session:
         user = get_user(session=session, user_id=update.effective_user.id)
-        tracked_users = user.tracked_objects
+        tracked_users = json.loads(user.tracked_objects)
         reply_keyboard = [tracked_users]
         reply_markup = ReplyKeyboardMarkup(
             reply_keyboard, one_time_keyboard=True, input_field_placeholder="Pick your object"
