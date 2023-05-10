@@ -1,14 +1,17 @@
+from datetime import timedelta
 import json
 from threading import Thread, Event
 from time import sleep
+from datetime import datetime
 from locator import MyService
-from models import get_all_users, add_location_record, get_tracked_users
+from models import get_all_users, add_location_record, get_tracked_users, get_last_coordinates
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker
 from sqlalchemy.orm.exc import DetachedInstanceError
 import logging
 from requests import ConnectionError
 from urllib3.exceptions import NewConnectionError, MaxRetryError
+from geopy.distance import distance
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -53,18 +56,38 @@ class Poller:
         return Session
 
     def poller(self):
+        if self.users:
+            users_data = {}
+            for user in self.users:
+                with SessionCM(self.session) as session:
+                    users_data[user.user_id]["last_location"] = get_last_coordinates(session, user.user_id)
+                    users_data[user.user_id]["next_poll_time"] = datetime.now()
+        else:
+            return "No users found"
+        
         while not self.stopped.is_set():
+            queue = []
             try:
-                if self.users:
-                    with SessionCM(self.session) as session:
-                        for user in self.users:
-                            service_objects = MyService(user.user_cookie, user.user_email)
-                            for nickname in json.loads(user.tracked_objects):
-                                person = service_objects.get_person_by_nickname(nickname)
-                                logging.info(msg=f"polling {person.nickname}")
+                with SessionCM(self.session) as session:
+                    for user in self.users:
+                        if users_data[user.user_id]["next_poll_time"] < datetime.now():
+                            queue.append(user)
+                            
+                    for user in queue:
+                        service_objects = MyService(user.user_cookie, user.user_email)
+                        for nickname in json.loads(user.tracked_objects):
+                            person = service_objects.get_person_by_nickname(nickname)
+                            current_location = (person.latitude, person.longitude)
+                            d = distance(current_location, users_data[user.user_id]["last_location"]).m
+                            delta_seconds = 60 / ((d * 0.2) + 1)
+                            next_poll_time = datetime.now() + timedelta(seconds=delta_seconds)
+                            users_data[user.user_id]["last_location"] = current_location
+                            users_data[user.user_id]["next_poll_time"] = next_poll_time
+                            logging.info(msg=f"polled {person.nickname} distance : {d}m, delta seconds : {delta_seconds}")
+                            if d != 0:
                                 add_location_record(session, user.user_id, person)
-                sleep(60)
-            except DetachedInstanceError or ConnectionError or NewConnectionError or MaxRetryError as err:
+                sleep(1)
+            except Exception as err:
                 print(f"Thread exception: {err}")
                 logging.info(msg=f"Thread exception: {err}")
 

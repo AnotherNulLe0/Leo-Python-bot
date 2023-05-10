@@ -404,7 +404,7 @@ async def time_picker_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                 nickname = context.user_data["object"]
                 timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
                 picture = location_render(session, owner_id=user.user_id, nickname=nickname, timeframe=timeframe,
-                                          length=100)
+                                          length=20)
                 await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
                 context.user_data.clear()
                 return ConversationHandler.END

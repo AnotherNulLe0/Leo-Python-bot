@@ -226,6 +226,11 @@ def get_coordinates(session: Session, owner_id, nickname, timeframe):
              Location.timestamp.between(timeframe[0], timeframe[1])))).unique()
     return res
 
+def get_last_coordinates(session: Session, owner_id, nickname):
+    columns = Bundle("columns", Location.latitude, Location.longitude)
+    res = session.scalars(select(columns).where(
+        and_(Location.owner == owner_id, Location.nickname == nickname))).order_by(Location.id.desc()).first(1)
+    return res
 
 def get_tracked_users(session: Session, owner_id):
     tracked = session.scalar(select(Users.tracked_objects).where(Users.user_id == owner_id))
