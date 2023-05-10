@@ -60,8 +60,13 @@ class Poller:
             users_data = {}
             for user in self.users:
                 with SessionCM(self.session) as session:
-                    users_data[user.user_id]["last_location"] = get_last_coordinates(session, user.user_id)
-                    users_data[user.user_id]["next_poll_time"] = datetime.now()
+                    objects = get_tracked_users(session, user.user_id)
+                    for nickname in objects:
+                        users_data.setdefault(user.user_id, {}).setdefault(nickname, {})["last_location"] = get_last_coordinates(
+                            session, user.user_id, nickname
+                        )
+                        # we don't label each tracked object with the timestamp since they anyway queried per owner.
+                        users_data[user.user_id]["next_poll_time"] = datetime.now()
         else:
             return "No users found"
         
@@ -78,13 +83,14 @@ class Poller:
                         for nickname in json.loads(user.tracked_objects):
                             person = service_objects.get_person_by_nickname(nickname)
                             current_location = (person.latitude, person.longitude)
-                            d = distance(current_location, users_data[user.user_id]["last_location"]).m
-                            delta_seconds = 60 / ((d * 0.2) + 1)
+                            d = distance(current_location, users_data[user.user_id][person.nickname]["last_location"]).m
+                            delta_seconds = 240 / ((d * 0.2) + 1)
                             next_poll_time = datetime.now() + timedelta(seconds=delta_seconds)
-                            users_data[user.user_id]["last_location"] = current_location
+                            users_data[user.user_id][person.nickname]["last_location"] = current_location
                             users_data[user.user_id]["next_poll_time"] = next_poll_time
                             logging.info(msg=f"polled {person.nickname} distance : {d}m, delta seconds : {delta_seconds}")
-                            if d != 0:
+                            if d > 5:
+                                print("writting data")
                                 add_location_record(session, user.user_id, person)
                 sleep(1)
             except Exception as err:
