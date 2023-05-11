@@ -253,31 +253,28 @@ async def receiver(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Function 'text': {update.effective_message.text}")
-    user = get_user(session=session, user_id=update.effective_user.id)
-    if not user:
-        user = add_user(session=session, user_id=update.effective_user.id)
-    user = UserState(user, session)
-    if user.state not in ["initial", "running"]:
-        msg = str(user.run(update.effective_message.text))
-        if user.state == "configured":
-            msg = str(user.run(location_poller))
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id, text=msg
-        )
-    if user.state == "running":
-        return ConversationHandler.END
+    return
 
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # TODO: move registration procedure from text()
     user = get_user(session=session, user_id=update.effective_user.id)
     if not user:
         user = add_user(session=session, user_id=update.effective_user.id)
-
     user = UserState(user, session)
-    msg = user.run()
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+    if user.state == "running":
+        msg = "You're already registered."
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+        return ConversationHandler.END
+    
+    msg = user.run(update.effective_message.text)
+    print(f"\nReply markup = {user.reply_markup}\n")
+    await update.message.reply_text(msg, reply_markup=user.reply_markup)
+    if user.state == "configured":
+            msg = str(user.run(location_poller))
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, text=msg
+            )
+            return ConversationHandler.END
     return REGISTER
 
 
@@ -285,7 +282,7 @@ async def add_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with SessionCM(Session) as session:
         user = get_user(session=session, user_id=update.effective_user.id)
         if not user:
-            msg = "Please register before you can add an object for tracking."
+            msg = "Please /register before you can add an object for tracking."
             await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
             return ConversationHandler.END
         else:
@@ -307,56 +304,7 @@ async def add_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id, text=msg
                 )
-            else:
-                msg = "Please /register before you can add an object for tracking."
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
             return ConversationHandler.END
-
-# async def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     print(context.args)
-#     user = get_user(session=session, user_id=update.effective_user.id)
-#     if not user:
-#         msg = "You need to register the location service first. /register"
-#         await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
-#     elif UserState(user, session).state == "running":
-#         nickname, day = context.args
-#         calendar, step = DetailedTelegramCalendar().build()
-#         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
-#                                        reply_markup=calendar)
-#         timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
-#         print(timeframe)
-#         picture = location_render(session, owner_id=user.user_id, nickname='Наталья', timeframe=timeframe, length=100)
-#         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
-#         return ConversationHandler.END
-
-
-# async def calender(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     calendar, step = DetailedTelegramCalendar().build()
-#     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
-#                                    reply_markup=calendar)
-#
-#
-# async def calender_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     query = update.callback_query
-#     result, key, step = DetailedTelegramCalendar().process(query.data)
-#     if not result and key:
-#         await context.bot.edit_message_text(f"Select {LSTEP[step]}",
-#                                             query.message.chat.id,
-#                                             query.message.message_id,
-#                                             reply_markup=key)
-#         return TIME
-#     elif result:
-#         await context.bot.edit_message_text(f"You selected {result}",
-#                                             query.message.chat.id,
-#                                             query.message.message_id)
-#         if not context.user_data.get("start_time", False):
-#             context.user_data["start_time"] = result
-#             return TIME
-#         elif not context.user_data.get("end_time", False):
-#             context.user_data["end_time"] = result
-#             return LOCATOR
-#     print(f"Timepicker error. result, key, step = {result, key, step}")
-#     return None
 
 
 async def locator_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -412,20 +360,6 @@ async def time_picker_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     return TIME
 
 
-# def locator(update: Update, context: ContextTypes.DEFAULT_TYPE):
-#     user = get_user(session=session, user_id=update.effective_user.id)
-#     if not user:
-#         msg = "You need to register the location service first. /register"
-#         await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
-#     elif UserState(user, session).state == "running":
-#         nickname = context.user_data["object"]
-#         timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
-#         print(timeframe)
-#         picture = location_render(session, owner_id=user.user_id, nickname=nickname, timeframe=timeframe, length=100)
-#         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
-#         return ConversationHandler.END
-
-
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation."""
     await update.message.reply_text(
@@ -462,7 +396,7 @@ if __name__ == "__main__":
     register_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("register", register)],
         states={
-            REGISTER: [CommandHandler("register", register)]
+            REGISTER: [CommandHandler("register", register), MessageHandler(filters.TEXT & (~filters.COMMAND), register)]
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )

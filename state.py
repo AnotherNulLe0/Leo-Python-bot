@@ -1,13 +1,15 @@
+from telegram import ReplyKeyboardMarkup
 from models import add_user_cookie, add_tracking_object, add_user_email, set_user_state, get_tracked_users
 from locator import MyService
 from models import Users
-
+from telegram.ext import ConversationHandler
 
 class UserState:
     def __init__(self, user, session):
         self.user: Users = user
         self.session = session
         self.state = user.user_state
+        self.reply_markup = None
         self.transitions = {
             "initial": {
                 "msg": "Starting locator registration procedure. \nSend me your email address.",
@@ -74,7 +76,13 @@ class UserState:
                 service_objects = MyService(self.user.user_cookie, self.user.user_email)
                 for person in service_objects.get_all_people():
                     objects.append(person.nickname)
-                return self.transition("got_cookies"), objects  # TODO: replace text format within ReplyKeyboardMarkup
+                reply_keyboard = [objects]
+                print(reply_keyboard)
+                self.reply_markup = ReplyKeyboardMarkup(
+                    reply_keyboard, one_time_keyboard=True, input_field_placeholder="Pick your object"
+                )
+                print(self.reply_markup)
+                return self.transition("got_cookies")  # TODO: replace text format within ReplyKeyboardMarkup
 
             return self.transition("error")
 
@@ -95,7 +103,11 @@ class UserState:
             poller.update()
             return self.transition("run")
 
+    def nop(self, *args):
+        return ConversationHandler.END
+    
     def run(self, *args):
+        self.reply_markup = None
         if self.state == "initial":
             return self.start()
         elif self.state == "waiting_email":
@@ -106,4 +118,6 @@ class UserState:
             return self.get_object(*args)
         elif self.state == "configured":
             return self.update_poller(*args)
+        elif self.state == "running":
+            return self.nop(*args)
         return False
