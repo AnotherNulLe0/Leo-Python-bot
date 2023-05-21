@@ -347,6 +347,7 @@ async def time_picker_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             calendar, step = DetailedTelegramCalendar().build()
             await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
                                            reply_markup=calendar)
+            return TIME
         elif not context.user_data.get("end_time", False):
             context.user_data["end_time"] = result
             with SessionCM(Session) as session:
