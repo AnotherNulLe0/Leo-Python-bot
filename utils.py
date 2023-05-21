@@ -75,23 +75,26 @@ class Poller:
             try:
                 with SessionCM(self.session) as session:
                     for user in self.users:
-                        if users_data[user.user_id]["next_poll_time"] < datetime.now():
+                        if users_data[user.user_id]["next_poll_time"] <= datetime.now():
                             queue.append(user)
                             
                     for user in queue:
                         service_objects = MyService(user.user_cookie, user.user_email)
+                        timers = []
                         for nickname in json.loads(user.tracked_objects):
                             person = service_objects.get_person_by_nickname(nickname)
                             current_location = (person.latitude, person.longitude)
                             d = distance(current_location, users_data[user.user_id][person.nickname]["last_location"]).m
-                            delta_seconds = 240 / ((d * 0.2) + 1) + 5
+                            delta_seconds = 180 / ((d / 10) + 1) + 10
                             next_poll_time = datetime.now() + timedelta(seconds=delta_seconds)
+                            timers.append(next_poll_time)
                             users_data[user.user_id][person.nickname]["last_location"] = current_location
-                            users_data[user.user_id]["next_poll_time"] = next_poll_time
-                            logging.info(msg=f"polled {person.nickname} distance : {d}m, delta seconds : {delta_seconds}")
+                            logging.info(msg=f"polled {person.nickname} distance : {d}m, delta seconds : {delta_seconds}, google timestamp: {person.datetime}")
                             if d > 5:
                                 print("writting data")
                                 add_location_record(session, user.user_id, person)
+                        users_data[user.user_id]["next_poll_time"] = min(timers)
+
                 sleep(1)
             except Exception as err:
                 print(f"Thread exception: {err}")
