@@ -5,7 +5,6 @@ from typing import List, Tuple
 import requests
 from config import gmaps_token
 from models import get_coordinates
-from utils import SessionCM
 
 
 class MyService(Service):
