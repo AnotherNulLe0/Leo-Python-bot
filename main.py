@@ -359,8 +359,9 @@ async def time_picker_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                     await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
                     context.user_data.clear()
                     return ConversationHandler.END
-
-    return TIME
+    logging.info(msg=f"Cannot process user data: {context.user_data}")
+    context.user_data.clear()
+    return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
