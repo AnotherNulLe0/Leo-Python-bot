@@ -322,6 +322,13 @@ async def locator_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def loc_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    with SessionCM(Session) as session:
+        user = get_user(session=session, user_id=update.effective_user.id)
+        if UserState(user, session).state != "running":
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"User locator is not configured. Conversation aborted.")
+            return ConversationHandler.END
     context.user_data["object"] = update.message.text
     calendar, step = DetailedTelegramCalendar().build()
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Select {LSTEP[step]}",
@@ -352,14 +359,13 @@ async def time_picker_callback(update: Update, context: ContextTypes.DEFAULT_TYP
             context.user_data["end_time"] = result
             with SessionCM(Session) as session:
                 user = get_user(session=session, user_id=update.effective_user.id)
-                if UserState(user, session).state == "running":
-                    nickname = context.user_data["object"]
-                    timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
-                    picture = location_render(session, owner_id=user.user_id, nickname=nickname, timeframe=timeframe,
-                                              length=20)
-                    await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
-                    context.user_data.clear()
-                    return ConversationHandler.END
+                nickname = context.user_data["object"]
+                timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
+                picture = location_render(session, owner_id=user.user_id, nickname=nickname, timeframe=timeframe,
+                                          length=20)
+                await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
+                context.user_data.clear()
+                return ConversationHandler.END
     logging.info(msg=f"Cannot process user data: {context.user_data}")
     context.user_data.clear()
     return ConversationHandler.END
