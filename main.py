@@ -258,24 +258,25 @@ async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = get_user(session=session, user_id=update.effective_user.id)
-    if not user:
-        user = add_user(session=session, user_id=update.effective_user.id)
-    user = UserState(user, session)
-    if user.state == "running":
-        msg = "You're already registered."
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
-        return ConversationHandler.END
+    with SessionCM(Session) as session:
+        user = get_user(session=session, user_id=update.effective_user.id)
+        if not user:
+            user = add_user(session=session, user_id=update.effective_user.id)
+        user = UserState(user, session)
+        if user.state == "running":
+            msg = "You're already registered."
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+            return ConversationHandler.END
 
-    msg = user.run(update.effective_message.text)
-    print(f"\nReply markup = {user.reply_markup}\n")
-    await update.message.reply_text(msg, reply_markup=user.reply_markup)
-    if user.state == "configured":
-        msg = str(user.run(location_poller))
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id, text=msg
-        )
-        return ConversationHandler.END
+        msg = user.run(update.effective_message.text)
+        print(f"\nReply markup = {user.reply_markup}\n")
+        await update.message.reply_text(msg, reply_markup=user.reply_markup)
+        if user.state == "configured":
+            msg = str(user.run(location_poller))
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, text=msg
+            )
+            return ConversationHandler.END
     return REGISTER
 
 
@@ -348,15 +349,16 @@ async def time_picker_callback(update: Update, context: ContextTypes.DEFAULT_TYP
                                            reply_markup=calendar)
         elif not context.user_data.get("end_time", False):
             context.user_data["end_time"] = result
-            user = get_user(session=session, user_id=update.effective_user.id)
-            if UserState(user, session).state == "running":
-                nickname = context.user_data["object"]
-                timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
-                picture = location_render(session, owner_id=user.user_id, nickname=nickname, timeframe=timeframe,
-                                          length=20)
-                await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
-                context.user_data.clear()
-                return ConversationHandler.END
+            with SessionCM(Session) as session:
+                user = get_user(session=session, user_id=update.effective_user.id)
+                if UserState(user, session).state == "running":
+                    nickname = context.user_data["object"]
+                    timeframe = [context.user_data["start_time"], context.user_data["end_time"]]
+                    picture = location_render(session, owner_id=user.user_id, nickname=nickname, timeframe=timeframe,
+                                              length=20)
+                    await context.bot.send_photo(chat_id=update.effective_chat.id, photo=picture)
+                    context.user_data.clear()
+                    return ConversationHandler.END
 
     return TIME
 
@@ -366,6 +368,7 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
         "Conversation canceled", reply_markup=ReplyKeyboardRemove()
     )
+    context.user_data.clear()
     return ConversationHandler.END
 
 

@@ -5,6 +5,7 @@ from typing import List, Tuple
 import requests
 from config import gmaps_token
 from models import get_coordinates
+from utils import SessionCM
 
 
 class MyService(Service):
@@ -28,6 +29,7 @@ def map_filter(coordinates: List[Tuple], length: int):
     return points
 
 # def url_creator(coordinates: List[Tuple]):
+#     """yandex url creator"""
 #     start = ",".join([str(i) for i in coordinates[0]]) + ",flag"
 #     end = ",".join([str(i) for i in coordinates[-1]]) + ",flag"
 #     points = ""
@@ -38,6 +40,7 @@ def map_filter(coordinates: List[Tuple], length: int):
 
 
 def url_creator(coordinates, length):
+    """google url creator"""
     points = ""
     start = "markers=size:mid|label:S|" + ",".join([str(i) for i in coordinates[0]])
     end = "markers=size:mid|label:E|" + ",".join([str(i) for i in coordinates[-1]])
@@ -47,23 +50,6 @@ def url_creator(coordinates, length):
     return f"https://maps.googleapis.com/maps/api/staticmap?language=ru&size=640x640&scale=2&key" \
            f"={gmaps_token}&{start}&{end}&path=color:0x0000ff|weight:2{points} "
 
-
-# from sqlalchemy.orm import scoped_session, sessionmaker
-# from sqlalchemy import create_engine
-# from utils import SessionCM
-#
-# db_interface = "sqlite+pysqlite:///mydb.db"
-# Session = scoped_session(
-#     sessionmaker(
-#         autocommit=False, autoflush=False, bind=create_engine(db_interface, echo=False)
-#     )
-# )
-
-# with SessionCM(Session) as session:
-#     d = get_coordinates(session, owner_id=227224447, nickname="Наталья", timeframe=["2023-04-29 12:37:58", "2023-05-01 13:25:46"])
-#     coordinates = [(i.longitude, i.latitude) for i in d]
-#     # print(coordinates)
-#     print(url_creator(coordinates))
 
 def location_render(session, owner_id, nickname, timeframe, length):
     """
@@ -79,7 +65,6 @@ def location_render(session, owner_id, nickname, timeframe, length):
     data = get_coordinates(session, owner_id, nickname, timeframe)
     coordinates = [(i.latitude, i.longitude) for i in data]
     url = url_creator(coordinates, length)
-    print(url)
     result = requests.get(url)
     if result.status_code == 200:
         return result.content
