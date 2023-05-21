@@ -142,6 +142,7 @@ async def bot_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode=constants.ParseMode.MARKDOWN_V2,
     )
 
+
 async def unknown(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_message()
     logging.info(
@@ -253,31 +254,28 @@ async def receiver(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logging.info(f"Function 'text': {update.effective_message.text}")
-    user = get_user(session=session, user_id=update.effective_user.id)
-    if not user:
-        user = add_user(session=session, user_id=update.effective_user.id)
-    user = UserState(user, session)
-    if user.state not in ["initial", "running"]:
-        msg = str(user.run(update.effective_message.text))
-        if user.state == "configured":
-            msg = str(user.run(location_poller))
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id, text=msg
-        )
-    if user.state == "running":
-        return ConversationHandler.END
+    return
 
 
 async def register(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # TODO: move registration procedure from text()
     user = get_user(session=session, user_id=update.effective_user.id)
     if not user:
         user = add_user(session=session, user_id=update.effective_user.id)
-
     user = UserState(user, session)
-    msg = user.run()
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+    if user.state == "running":
+        msg = "You're already registered."
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
+        return ConversationHandler.END
+
+    msg = user.run(update.effective_message.text)
+    print(f"\nReply markup = {user.reply_markup}\n")
+    await update.message.reply_text(msg, reply_markup=user.reply_markup)
+    if user.state == "configured":
+        msg = str(user.run(location_poller))
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id, text=msg
+        )
+        return ConversationHandler.END
     return REGISTER
 
 
@@ -285,7 +283,7 @@ async def add_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with SessionCM(Session) as session:
         user = get_user(session=session, user_id=update.effective_user.id)
         if not user:
-            msg = "Please register before you can add an object for tracking."
+            msg = "Please /register before you can add an object for tracking."
             await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
             return ConversationHandler.END
         else:
@@ -307,9 +305,6 @@ async def add_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(
                     chat_id=update.effective_chat.id, text=msg
                 )
-            else:
-                msg = "Please /register before you can add an object for tracking."
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=msg)
             return ConversationHandler.END
 
 
@@ -402,7 +397,8 @@ if __name__ == "__main__":
     register_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("register", register)],
         states={
-            REGISTER: [CommandHandler("register", register), MessageHandler(filters.TEXT & (~filters.COMMAND), register)]
+            REGISTER: [CommandHandler("register", register),
+                       MessageHandler(filters.TEXT & (~filters.COMMAND), register)]
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
