@@ -84,7 +84,7 @@ class Poller:
                             person = service_objects.get_person_by_nickname(nickname)
                             current_location = (person.latitude, person.longitude)
                             d = distance(current_location, users_data[user.user_id][person.nickname]["last_location"]).m
-                            delta_seconds = 240 / ((d * 0.2) + 1)
+                            delta_seconds = 240 / ((d * 0.2) + 1) + 5
                             next_poll_time = datetime.now() + timedelta(seconds=delta_seconds)
                             users_data[user.user_id][person.nickname]["last_location"] = current_location
                             users_data[user.user_id]["next_poll_time"] = next_poll_time

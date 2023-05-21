@@ -204,7 +204,7 @@ def add_location_record(session: Session, owner, person) -> bool:
         "current_location": person.address,
         "latitude": person.latitude,
         "longitude": person.longitude,
-        "timestamp": person.datetime,
+        "timestamp": person.timestamp,
         "charging": person.charging,
         "battery": person.battery_level,
         "accuracy": person.accuracy,
