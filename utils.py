@@ -12,11 +12,31 @@ import logging
 from requests import ConnectionError
 from urllib3.exceptions import NewConnectionError, MaxRetryError
 from geopy.distance import distance
+from pyicloud import PyiCloudService
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 
+api = PyiCloudService('EMAIL', 'PASSWORD')
+api.validate_2fa_code('2FA_CODE')
+for device in api.devices:
+    device.location()
+#     {'isOld': False,
+#  'isInaccurate': False,
+#  'altitude': 0.0,
+#  'positionType': 'Wifi',
+#  'secureLocation': None,
+#  'secureLocationTs': 0,
+#  'latitude': 49.01275617984868,
+#  'floorLevel': 0,
+#  'horizontalAccuracy': 20.0,
+#  'locationType': '',
+#  'timeStamp': 1684919044204,
+#  'locationFinished': False,
+#  'verticalAccuracy': 0.0,
+#  'locationMode': None,
+#  'longitude': 8.42418517523607}
 
 class SessionCM:
     """Context manager for SQLAlchemy session."""
