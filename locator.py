@@ -1,10 +1,13 @@
-from locationsharinglib import Service
+from locationsharinglib import Service, Person
 from locationsharinglib.locationsharinglibexceptions import InvalidCookies
 from geopy.distance import distance
 from typing import List, Tuple
 import requests
 from config import gmaps_token
 from models import get_coordinates
+# import pytz
+# from timezonefinder import TimezoneFinder
+# from datetime import datetime
 
 
 class MyService(Service):
@@ -16,6 +19,14 @@ class MyService(Service):
             raise InvalidCookies(message) from None
         return session
 
+# class MyPerson(Person):
+#     tf = TimezoneFinder()
+    
+#     @property
+#     def datetime(self):
+#         """A datetime representation of the location retrieval."""
+#         tz = self.tf.timezone_at(lat=self.latitude, lng=self.longitude)
+#         return datetime.fromtimestamp(int(self.timestamp) / 1000, tz=pytz.timezone(tz))
 
 def map_filter(coordinates: List[Tuple], length: int):
     points = [coordinates[0]]

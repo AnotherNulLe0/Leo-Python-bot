@@ -44,6 +44,7 @@ class UserState:
             "running": {
                 "msg": "running",
                 "add_object": "waiting_object",
+                "delete_object": "configured",
                 "reset": "initial",
                 "error": "errored",
             }

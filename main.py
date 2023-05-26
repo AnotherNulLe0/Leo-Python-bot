@@ -1,6 +1,6 @@
 import json
 import logging
-from telegram import Update, constants, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, constants, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -19,7 +19,7 @@ from sqlalchemy.orm import scoped_session, sessionmaker
 
 from locator import location_render
 from utils import SessionCM, Poller
-from models import init_db, insert_chat_log, DataclassFactory, get_user, add_user, get_tracked_users
+from models import delete_user, init_db, insert_chat_log, DataclassFactory, get_user, add_user, get_tracked_users
 from state import UserState
 
 logging.basicConfig(
@@ -34,7 +34,7 @@ Session = scoped_session(
 )
 location_poller = Poller(db_interface)
 
-OBJECT, TIME, LOCATOR, REGISTER, ADD = "OBJECT", "TIME", "LOCATOR", "REGISTER", "ADD"
+OBJECT, TIME, LOCATOR, REGISTER, ADD, DELETE = "OBJECT", "TIME", "LOCATOR", "REGISTER", "ADD", "DELETE"
 
 
 class BotData:
@@ -115,8 +115,7 @@ async def send_action(
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_message()
     reply_keyboard = [
-        ["/help", "/start"],
-        ["/register", "/locator", "/add"],
+        ["/help", "/start", "/register", "/locator", "/add", "/delete"],
     ]
     markup = ReplyKeyboardMarkup(reply_keyboard)
     logging.info(f"Function 'start': {update.effective_message.text}")
@@ -291,7 +290,6 @@ async def add_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user = UserState(user, session)
             if user.state == "running":
                 objects = list(user.get_untracked_objects())
-                print(objects)
                 reply_keyboard = [objects]
                 reply_markup = ReplyKeyboardMarkup(
                     reply_keyboard, one_time_keyboard=True, input_field_placeholder="Pick your object"
@@ -303,9 +301,11 @@ async def add_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 msg = str(user.run(update.effective_message.text))
                 if user.state == "configured":
                     msg = str(user.run(location_poller))
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id, text=msg
-                )
+                    objects = ", ".join(get_tracked_users(session, owner_id=update.effective_user.id))
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=f"Poller status is: {msg}.\nTracked users are: {objects}"
+                    )
             return ConversationHandler.END
 
 
@@ -370,6 +370,60 @@ async def time_picker_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data.clear()
     return ConversationHandler.END
 
+async def delete_object_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    with SessionCM(Session) as session:
+        objects = get_tracked_users(session, update.effective_user.id)
+        msg = "Pick the object you want to delete. All related data will be deleted as well."
+        objects.append("done")
+        buttons = [InlineKeyboardButton(text=obj, callback_data=obj) for obj in objects]
+        keyboard = InlineKeyboardMarkup([buttons])
+        # reply_markup = ReplyKeyboardMarkup(
+        #     reply_keyboard, one_time_keyboard=True, input_field_placeholder="Pick your object"
+        # )
+        res = await update.message.reply_text(
+            text=msg,
+            reply_markup=keyboard
+            )
+    return DELETE
+
+async def delete_object(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    object = query.data
+    with SessionCM(Session) as session:
+        user = get_user(session=session, user_id=update.effective_user.id)
+        user = UserState(user, session)
+        if object == "done":
+            user.transition("delete_object")
+            user.run(location_poller)
+            await context.bot.delete_message(
+                chat_id=update.effective_chat.id,
+                message_id=query.message.message_id,
+            )
+            objects = ", ".join(get_tracked_users(session, owner_id=update.effective_user.id))
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"Tracked users are: {objects}"
+            )
+            return ConversationHandler.END
+        else:
+            delete_user(session, update.effective_user.id, object)
+            user.transition("delete_object")
+            msg = f"Object {object} has been deleted. Select the user you want to delete. All related data will be deleted as well. Click 'done' to apply changes"
+            
+        objects = get_tracked_users(session, update.effective_user.id)
+        objects.append("done")
+        buttons = [InlineKeyboardButton(text=obj, callback_data=obj) for obj in objects]
+        keyboard = InlineKeyboardMarkup([buttons])
+
+        await context.bot.edit_message_text(
+            text=msg,
+            chat_id=update.effective_chat.id,
+            message_id=query.message.message_id,
+            reply_markup=keyboard,
+        )
+        
+        return DELETE
+
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation."""
@@ -394,14 +448,20 @@ if __name__ == "__main__":
     # feedback_handler = CommandHandler("feedback", feedback)
     # message_handler = CommandHandler("message", message)
     register_handler = CommandHandler("register", register)
-    # locator_handler = CommandHandler("locator", locator)
-    # calender_handler = CommandHandler("calender", calender)
+
     receiver_handler = MessageHandler(filters.TEXT & (~filters.COMMAND), receiver)
-    # callback_handler = CallbackQueryHandler(calender_callback)
+
     new_object_conversation_handler = ConversationHandler(
         entry_points=[CommandHandler("add", add_object)],
         states={
             ADD: [MessageHandler(filters.TEXT & (~filters.COMMAND), add_object)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel)],
+    )
+    delete_object_conversation_handler = ConversationHandler(
+        entry_points=[CommandHandler("delete", delete_object_start)],
+        states={
+            DELETE: [CallbackQueryHandler(delete_object)]
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
@@ -428,13 +488,11 @@ if __name__ == "__main__":
     # application.add_handler(feedback_handler)
     # application.add_handler(message_handler)
     application.add_handler(new_object_conversation_handler)
+    application.add_handler(delete_object_conversation_handler)
     application.add_handler(register_conversation_handler)
     application.add_handler(location_conversation_handler)
     application.add_handler(receiver_handler)
     application.add_handler(register_handler)
-    # application.add_handler(locator_handler)
-    # application.add_handler(calender_handler)
-    # application.add_handler(callback_handler)
     application.add_handler(unknown_handler)
 
     application.run_polling()

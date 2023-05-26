@@ -15,6 +15,7 @@ from sqlalchemy import (
     update,
     and_,
     inspect,
+    delete,
 )
 from sqlalchemy.orm import (
     Session,
@@ -155,6 +156,20 @@ def add_user(session: Session, user_id: int) -> str:
     return user
 
 
+def delete_user(session: Session, user_id: int, obj: str) -> bool:
+    existing = session.scalar(select(Users.tracked_objects).where(Users.user_id == user_id))
+    if existing:
+        existing = json.loads(existing)
+        existing.remove(obj)
+        existing = json.dumps(existing)
+        new_objects = update(Users).where(Users.user_id == user_id).values(tracked_objects=existing)
+        locations = delete(Location).where(and_(Location.owner == user_id, Location.nickname == obj))
+        session.execute(locations)
+        session.execute(new_objects)
+        return
+    return "User does not exist"
+    
+    
 def get_user(session: Session, user_id: int) -> Users:
     return session.scalar(select(Users).where(Users.user_id == user_id))
 
@@ -163,7 +178,7 @@ def set_user_state(session: Session, user_id: int, state: str) -> bool:
     new_state = update(Users).where(Users.user_id == user_id).values(user_state=state)
     res = session.execute(new_state)
     session.commit()
-    print(f'res: {res}')
+
     return True if res.rowcount == 1 else False
 
 
@@ -171,7 +186,7 @@ def add_user_email(session: Session, user_id: int, email: str) -> bool:
     new_email = update(Users).where(Users.user_id == user_id).values(user_email=email)
     res = session.execute(new_email)
     session.commit()
-    print(f'res: {res.rowcount}')
+
     return True if res.rowcount == 1 else False
 
 
@@ -179,7 +194,7 @@ def add_user_cookie(session: Session, user_id: int, cookie: str) -> bool:
     new_cookie = update(Users).where(Users.user_id == user_id).values(user_cookie=cookie)
     res = session.execute(new_cookie)
     session.commit()
-    print(f'res: {res}')
+
     return True if res.rowcount == 1 else False
 
 
@@ -192,7 +207,7 @@ def add_tracking_object(session: Session, user_id: int, obj: str) -> bool:
         new_objects = update(Users).where(Users.user_id == user_id).values(tracked_objects=existing)
         res = session.execute(new_objects)
         session.commit()
-        print(f'res: {res}')
+
         return True if res.rowcount == 1 else False
 
 
